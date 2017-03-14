@@ -270,12 +270,12 @@ bToMB b = fromIntegral b / 1048576
 series :: Int64 -> Int64 -> [Int64]
 series n h = takeWhile (<= h) . dropWhile (< n) $ iterate (*2) 8192
 
-tuningSpace :: Options -> IO [[GCHooks]]
+tuningSpace :: Options -> IO (([Int64], [Int64]), Maybe Int64)
 tuningSpace opts = do
     -- TODO: change A, H presentation to step number using logBase
     printf "minA:\t%d\tmaxA:\t%d\n" minA maxA
     printf "minH:\t%d\tmaxH:\t%d\n" minH maxH
-    return [[GCHooks a h mm | h <- series minH maxH] | a <- series minA maxA]
+    return ((series minA maxA, series minH maxH), mm)
   where
         mm   = optMmax opts
         minA = optAmin opts
@@ -314,6 +314,27 @@ coreParse xs = foldr f ([],[]) ('$' : xs)
       f x (ys, zs) | isDigit x = (x : ys, zs)
                    | ys /= []  = ([], (read ys::Int) : zs)
                    | otherwise = (ys, zs)
+   
+-- TODO: variable naming
+findOpt :: FilePath -> [String] -> [(Int, Int)] -> (([Int64], [Int64]), Maybe Int64) -> IO [(Int, Int)]
+findOpt exe args ps ((optAs, optHs), maxmem) = do
+    res <- forM ps $ \(a, h) -> do 
+      let hooks = GCHooks (optAs !! a) (optHs !! h) maxmem
+      Just s <- runGHCProgram exe args hooks 1 -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
+      let t = totalTime s
+      printf "%4.3f\t%d\t%d\n" t a h
+      return (t, (a, h))
+    let tmps = map (mid (snd (minimum res))) ps 
+    printf "%s\n" (show tmps)
+    rr <- case (tmps /= ps) of
+           True -> findOpt exe args tmps ((optAs, optHs), maxmem)
+           _    -> do 
+                    printf "%4.3f\t%d\t%d\n" (fst (minimum res)) (fst (snd (minimum res))) (snd (snd (minimum res)))
+                    return tmps
+    return rr
+  where
+      mid :: (Int, Int) -> (Int, Int) -> (Int, Int)
+      mid (a1, h1) (a2, h2) = ((min a1 a2) + abs (a1 - a2) `div` 2,  (min h1 h2) + abs (h1 - h2) `div` 2)
 
 main :: IO ()
 main = do
@@ -331,11 +352,18 @@ main = do
     let x = read core'::Int
     let newopt = "--coreopt="
     let cores = (coreOptCheck (getCoreOpt (coreParse coreinfo)) x)
+    optAHM <- tuningSpace opts
+    findOpt exe args [(0,0), (0,10), (15,10), (15,0)] optAHM
+    return ()
+    
 
+
+{-
     -- Now traverse the space
     statss <- forM cores $ \core -> do 
       printf "%dcores\n" core 
-      hooksss <- tuningSpace opts 
+      optAHM <- tuningSpace opts 
+
       statss' <- forM hooksss $ \hookss -> do
         stats' <- forM hookss $ \hooks -> do
           s <- runGHCProgram exe args hooks core -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
@@ -347,15 +375,19 @@ main = do
         return stats'
       printf "\n"
       let stats = concat statss'
+-}
+{-
       when (null . catMaybes . map snd $ stats)  $ do error "All program runs failed, unable to collect data."
       when (optTime opts) (best core exe opts "time" "Running time" "s" "seconds" totalTime stats)
       when (optPeak opts) (best core exe opts "peak" "Peak memory" "MB" "MB" (fromIntegral . peakMemory) stats)
       when (optResi opts) (best core exe opts "residency" "Resident memory" "MB" "MB" (bToMB . maxResident) stats)
       when (optTime opts && optResi opts) 
             (best core exe opts "integ" "Residency*Time" "MBs" "MBs" (\s -> totalTime s * bToMB (maxResident s)) stats)
+-}
+{-
       printf "\n"
       return stats
-    return ()
+-}
 
 -- stats-output separate for various outputs
 
