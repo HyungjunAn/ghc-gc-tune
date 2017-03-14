@@ -316,18 +316,18 @@ coreParse xs = foldr f ([],[]) ('$' : xs)
                    | otherwise = (ys, zs)
    
 -- TODO: variable naming
-findOpt :: FilePath -> [String] -> [(Int, Int)] -> (([Int64], [Int64]), Maybe Int64) -> IO [(Int, Int)]
-findOpt exe args ps ((optAs, optHs), maxmem) = do
+findOpt :: FilePath -> [String] -> Int -> [(Int, Int)] -> (([Int64], [Int64]), Maybe Int64) -> IO [(Int, Int)]
+findOpt exe args core ps ((optAs, optHs), maxmem) = do
     res <- forM ps $ \(a, h) -> do 
       let hooks = GCHooks (optAs !! a) (optHs !! h) maxmem
-      Just s <- runGHCProgram exe args hooks 1 -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
+      Just s <- runGHCProgram exe args hooks core -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
       let t = totalTime s
-      printf "%4.3f\t%d\t%d\n" t a h
+      -- printf "%4.3f\t%d\t%d\n" t a h
       return (t, (a, h))
     let tmps = map (mid (snd (minimum res))) ps 
-    printf "%s\n" (show tmps)
+    -- printf "%s\n" (show tmps)
     rr <- case (tmps /= ps) of
-           True -> findOpt exe args tmps ((optAs, optHs), maxmem)
+           True -> findOpt exe args core tmps ((optAs, optHs), maxmem)
            _    -> do 
                     printf "%4.3f\t%d\t%d\n" (fst (minimum res)) (fst (snd (minimum res))) (snd (snd (minimum res)))
                     return tmps
@@ -353,41 +353,13 @@ main = do
     let newopt = "--coreopt="
     let cores = (coreOptCheck (getCoreOpt (coreParse coreinfo)) x)
     optAHM <- tuningSpace opts
-    findOpt exe args [(0,0), (0,10), (15,10), (15,0)] optAHM
+
+    forM cores $ \core -> do
+      printf "%dcores\n" core
+      -- TODO: change 0,0 0,10 15,10 ..
+      findOpt exe args core [(0,0), (0,10), (15,10), (15,0)] optAHM
+      printf "\n"
     return ()
-    
-
-
-{-
-    -- Now traverse the space
-    statss <- forM cores $ \core -> do 
-      printf "%dcores\n" core 
-      optAHM <- tuningSpace opts 
-
-      statss' <- forM hooksss $ \hookss -> do
-        stats' <- forM hookss $ \hooks -> do
-          s <- runGHCProgram exe args hooks core -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
-          case s of
-            Just y -> printf "%4.3f\t" (totalTime y)
-            Nothing -> return ()
-          return (hooks, s)
-        printf "\n"
-        return stats'
-      printf "\n"
-      let stats = concat statss'
--}
-{-
-      when (null . catMaybes . map snd $ stats)  $ do error "All program runs failed, unable to collect data."
-      when (optTime opts) (best core exe opts "time" "Running time" "s" "seconds" totalTime stats)
-      when (optPeak opts) (best core exe opts "peak" "Peak memory" "MB" "MB" (fromIntegral . peakMemory) stats)
-      when (optResi opts) (best core exe opts "residency" "Resident memory" "MB" "MB" (bToMB . maxResident) stats)
-      when (optTime opts && optResi opts) 
-            (best core exe opts "integ" "Residency*Time" "MBs" "MBs" (\s -> totalTime s * bToMB (maxResident s)) stats)
--}
-{-
-      printf "\n"
-      return stats
--}
 
 -- stats-output separate for various outputs
 
