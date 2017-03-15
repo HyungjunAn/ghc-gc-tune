@@ -273,8 +273,8 @@ series n h = takeWhile (<= h) . dropWhile (< n) $ iterate (*2) 8192
 tuningSpace :: Options -> IO (([Int64], [Int64]), Maybe Int64)
 tuningSpace opts = do
     -- TODO: change A, H presentation to step number using logBase
-    printf "minA:\t%d\tmaxA:\t%d\n" minA maxA
-    printf "minH:\t%d\tmaxH:\t%d\n" minH maxH
+    -- printf "minA:\t%d\tmaxA:\t%d\n" minA maxA
+    -- printf "minH:\t%d\tmaxH:\t%d\n" minH maxH
     return ((series minA maxA, series minH maxH), mm)
   where
         mm   = optMmax opts
@@ -315,21 +315,24 @@ coreParse xs = foldr f ([],[]) ('$' : xs)
                    | ys /= []  = ([], (read ys::Int) : zs)
                    | otherwise = (ys, zs)
    
--- TODO: variable naming
-findOpt :: FilePath -> [String] -> Int -> [(Int, Int)] -> (([Int64], [Int64]), Maybe Int64) -> IO [(Int, Int)]
-findOpt exe args core ps ((optAs, optHs), maxmem) = do
+-- TODO: variable naming & don't duplicate calculate
+findOpt :: FilePath -> [String] -> Int -> [(Int, Int)] -> (([Int64], [Int64]), Maybe Int64) -> Int -> IO [(Int, Int)]
+findOpt exe args core ps ((optAs, optHs), maxmem) it = do
     res <- forM ps $ \(a, h) -> do 
       let hooks = GCHooks (optAs !! a) (optHs !! h) maxmem
       Just s <- runGHCProgram exe args hooks core -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
       let t = totalTime s
-      -- printf "%4.3f\t%d\t%d\n" t a h
+      printf "%4.3f\t" t
       return (t, (a, h))
+    printf "\n"
     let tmps = map (mid (snd (minimum res))) ps 
-    -- printf "%s\n" (show tmps)
     rr <- case (tmps /= ps) of
-           True -> findOpt exe args core tmps ((optAs, optHs), maxmem)
+           True -> findOpt exe args core tmps ((optAs, optHs), maxmem) (it - 1)
            _    -> do 
-                    printf "%4.3f\t%d\t%d\n" (fst (minimum res)) (fst (snd (minimum res))) (snd (snd (minimum res)))
+                    forM [1..it-1] $ \ _ -> printf "\n"
+                    printf "\nBest settings for Running time:\n"
+                    printf "%4.3f\t%d\t%d\n" (fst (minimum res)) (fst (snd (minimum res)) + 1) (snd (snd (minimum res)) + 1)
+                    printf "\n\n\n\n\n\n"
                     return tmps
     return rr
   where
@@ -355,10 +358,9 @@ main = do
     optAHM <- tuningSpace opts
 
     forM cores $ \core -> do
-      printf "%dcores\n" core
+      printf "%dcores\n\n\n" core
       -- TODO: change 0,0 0,10 15,10 ..
-      findOpt exe args core [(0,0), (0,10), (15,10), (15,0)] optAHM
-      printf "\n"
+      findOpt exe args core [(0,0), (0,10), (15,10), (15,0)] optAHM 16
     return ()
 
 -- stats-output separate for various outputs
