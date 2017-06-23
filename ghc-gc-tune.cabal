@@ -1,5 +1,5 @@
 name:           ghc-gc-tune
-version:        0.3
+version:        0.31
 license:        BSD3
 license-file:   LICENSE
 author:         Don Stewart
@@ -32,6 +32,17 @@ build-type:     Simple
 cabal-version:  >= 1.6
 
 executable ghc-gc-tune
+    hs-source-dirs: app
+    build-depends:  base    >= 4 && <= 5,
+                    process >= 1.0.1,
+                    directory,
+                    filepath
+
+    main-is:        ghc-gc-tune.hs
+    ghc-options:    -Wall
+
+executable ghc-gc-tune-DandC
+    hs-source-dirs: app
     build-depends:  base    >= 4 && <= 5,
                     process >= 1.0.1,
                     directory,
