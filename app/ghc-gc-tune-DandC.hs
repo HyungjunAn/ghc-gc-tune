@@ -316,28 +316,42 @@ coreParse xs = foldr f ([],[]) ('$' : xs)
                    | otherwise = (ys, zs)
    
 -- TODO: variable naming & don't duplicate calculate
-findOpt :: FilePath -> [String] -> Int -> [(Int, Int)] -> (([Int64], [Int64]), Maybe Int64) -> Int -> IO [(Int, Int)]
-findOpt exe args core ps ((optAs, optHs), maxmem) it = do
-    res <- forM ps $ \(a, h) -> do 
-      let hooks = GCHooks (optAs !! a) (optHs !! h) maxmem
-      Just s <- runGHCProgram exe args hooks core -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
-      let t = totalTime s
-      printf "%4.3f\t" t
-      return (t, (a, h))
-    printf "\n"
-    let tmps = map (mid (snd (minimum res))) ps 
-    rr <- case (tmps /= ps) of
-           True -> findOpt exe args core tmps ((optAs, optHs), maxmem) (it - 1)
+findBestOpt :: FilePath -> [String] -> Int -> ValidOpts -> Int -> IO (Int64, Int64)
+findBestOpt exe args core ((optAs, optHs), maxmem) it = do
+    let maxAi = length optAs - 1
+        maxHi = length optHs - 1
+        ps = [(0, 0), (0, maxHi), (maxAi, 0), (maxAi, maxHi)]
+
+    res <- loop exe args core ps ((optAs, optHs), maxmem) it
+    return res
+  where
+    loop exe args core ps ((optAs, optHs), maxmem) it = do
+      res <- forM ps $ \(a, h) -> do 
+        let hooks = GCHooks (optAs !! a) (optHs !! h) maxmem
+        Just s <- runGHCProgram exe args hooks core 
+        -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
+        let t = totalTime s
+        printf "%4.3f\t" t
+        return (t, (a, h))
+      printf "\n"
+      let tmps = map (mid (snd (minimum res))) ps 
+      rr <- case (tmps /= ps) of
+           True -> loop exe args core tmps ((optAs, optHs), maxmem) (it - 1)
            _    -> do 
                     forM [1..it-1] $ \ _ -> printf "\n"
                     printf "\nBest settings for Running time:\n"
-                    printf "%4.3f\t%d\t%d\n" (fst (minimum res)) (fst (snd (minimum res)) + 1) (snd (snd (minimum res)) + 1)
+                    let (bestTime, (bestA_i, bestH_i)) = minimum res
+                    printf "%4.3f\t%d\t%d\n" bestTime (bestA_i + 1) (bestH_i + 1)
                     printf "\n\n\n\n\n\n"
-                    return tmps
-    return rr
-  where
-      mid :: (Int, Int) -> (Int, Int) -> (Int, Int)
-      mid (a1, h1) (a2, h2) = ((min a1 a2) + abs (a1 - a2) `div` 2,  (min h1 h2) + abs (h1 - h2) `div` 2)
+                    return (optAs !! bestA_i, optHs !! bestH_i)
+      return rr
+      where
+        mid :: (Int, Int) -> (Int, Int) -> (Int, Int)
+        mid (a1, h1) (a2, h2) = ((a1 + a2) `div` 2,  (h1 + h2) `div` 2)
+
+type OptN = (Int, Int)
+type ValidOpts = (([Int64], [Int64]), Maybe Int64)
+
 
 main :: IO ()
 main = do
@@ -360,7 +374,7 @@ main = do
     forM cores $ \core -> do
       printf "%dcores\n\n\n" core
       -- TODO: change 0,0 0,10 15,10 ..
-      findOpt exe args core [(0,0), (0,10), (15,10), (15,0)] optAHM 16
+      findBestOpt exe args core optAHM 16
     return ()
 
 -- stats-output separate for various outputs

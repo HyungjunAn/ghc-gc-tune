@@ -48,7 +48,7 @@ executable ghc-gc-tune-DandC
                     directory,
                     filepath
 
-    main-is:        ghc-gc-tune.hs
+    main-is:        ghc-gc-tune-DandC.hs
     ghc-options:    -Wall
 
 source-repository head
