@@ -326,13 +326,13 @@ findBestOpt fileInfo ((optAs, optHs), maxmem) it = do
   where
     loop :: FileInfo -> [OptN] -> ValidOpts -> Int -> IO Opt
     loop fileInfo optNs ((optAs, optHs), maxmem) it = do
-      res <- forM optNs $ \(i, j) -> do 
-        let hooks = GCHooks (optAs !! i) (optHs !! j) maxmem
+      res <- forM optNs $ \(a_i, h_i) -> do 
+        let hooks = GCHooks (optAs !! a_i) (optHs !! h_i) maxmem
         Just s <- runGHCProgram fileInfo hooks 
         -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
         let t = totalTime s
         printf "%4.3f\t" t
-        return (t, (i, j))
+        return (t, (a_i, h_i))
       printf "\n"
       let (time, (a_i, h_i)) = minimum res
           nextOptNs = map (mid (a_i, h_i)) optNs
