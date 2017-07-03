@@ -316,16 +316,18 @@ coreParse xs = foldr f ([],[]) ('$' : xs)
                    | otherwise = (ys, zs)
    
 findBestOpt :: FileInfo -> ValidOpts -> Int -> IO Opt
-findBestOpt fileInfo (optAs, optHs, maxmem) it = do
-    let maxAi  = length optAs - 1
+findBestOpt fileInfo validOpts it = do
+    let (optAs, optHs, maxmem) = validOpts
+        maxAi  = length optAs - 1
         maxHi  = length optHs - 1
         initOptNs = [(0, 0), (0, maxHi), (maxAi, 0), (maxAi, maxHi)]
 
-    bestOpt <- loop fileInfo initOptNs (optAs, optHs, maxmem) it
+    bestOpt <- loop fileInfo initOptNs validOpts it
     return bestOpt
   where
     loop :: FileInfo -> [OptN] -> ValidOpts -> Int -> IO Opt
-    loop fileInfo optNs (optAs, optHs, maxmem) it = do
+    loop fileInfo optNs validOpts it = do
+      let (optAs, optHs, maxmem) = validOpts
       res <- forM optNs $ \(a_i, h_i) -> do 
         let hooks = GCHooks (optAs !! a_i) (optHs !! h_i) maxmem
         Just s <- runGHCProgram fileInfo hooks 
@@ -337,7 +339,7 @@ findBestOpt fileInfo (optAs, optHs, maxmem) it = do
       let (time, (a_i, h_i)) = minimum res
           nextOptNs = map (mid (a_i, h_i)) optNs
       bestOpt <- case (nextOptNs /= optNs) of
-           True -> loop fileInfo nextOptNs (optAs, optHs, maxmem) (it - 1)
+           True -> loop fileInfo nextOptNs validOpts (it - 1)
            _    -> do 
                     forM [1..it-1] $ \ _ -> printf "\n"
                     printf "\nBest settings for Running time:\n"
