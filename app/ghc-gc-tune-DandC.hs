@@ -315,40 +315,42 @@ coreParse xs = foldr f ([],[]) ('$' : xs)
                    | ys /= []  = ([], (read ys::Int) : zs)
                    | otherwise = (ys, zs)
    
--- TODO: variable naming & don't duplicate calculate
-findBestOpt :: FilePath -> [String] -> Int -> ValidOpts -> Int -> IO (Int64, Int64)
-findBestOpt exe args core ((optAs, optHs), maxmem) it = do
-    let maxAi = length optAs - 1
-        maxHi = length optHs - 1
-        ps = [(0, 0), (0, maxHi), (maxAi, 0), (maxAi, maxHi)]
+findBestOpt :: FileInfo -> ValidOpts -> Int -> IO Opt
+findBestOpt fileInfo ((optAs, optHs), maxmem) it = do
+    let maxAi  = length optAs - 1
+        maxHi  = length optHs - 1
+        initOptNs = [(0, 0), (0, maxHi), (maxAi, 0), (maxAi, maxHi)]
 
-    res <- loop exe args core ps ((optAs, optHs), maxmem) it
-    return res
+    bestOpt <- loop fileInfo initOptNs ((optAs, optHs), maxmem) it
+    return bestOpt
   where
-    loop exe args core ps ((optAs, optHs), maxmem) it = do
-      res <- forM ps $ \(a, h) -> do 
-        let hooks = GCHooks (optAs !! a) (optHs !! h) maxmem
-        Just s <- runGHCProgram exe args hooks core 
+    loop :: FileInfo -> [OptN] -> ValidOpts -> Int -> IO Opt
+    loop fileInfo optNs ((optAs, optHs), maxmem) it = do
+      res <- forM optNs $ \(i, j) -> do 
+        let hooks = GCHooks (optAs !! i) (optHs !! j) maxmem
+        Just s <- runGHCProgram fileInfo hooks 
         -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
         let t = totalTime s
         printf "%4.3f\t" t
-        return (t, (a, h))
+        return (t, (i, j))
       printf "\n"
-      let tmps = map (mid (snd (minimum res))) ps 
-      rr <- case (tmps /= ps) of
-           True -> loop exe args core tmps ((optAs, optHs), maxmem) (it - 1)
+      let (time, (a_i, h_i)) = minimum res
+          nextOptNs = map (mid (a_i, h_i)) optNs
+      bestOpt <- case (nextOptNs /= optNs) of
+           True -> loop fileInfo nextOptNs ((optAs, optHs), maxmem) (it - 1)
            _    -> do 
                     forM [1..it-1] $ \ _ -> printf "\n"
                     printf "\nBest settings for Running time:\n"
-                    let (bestTime, (bestA_i, bestH_i)) = minimum res
-                    printf "%4.3f\t%d\t%d\n" bestTime (bestA_i + 1) (bestH_i + 1)
+                    printf "%4.3f\t%d\t%d\n" time (a_i + 1) (h_i + 1)
                     printf "\n\n\n\n\n\n"
-                    return (optAs !! bestA_i, optHs !! bestH_i)
-      return rr
+                    return (optAs !! a_i, optHs !! h_i)
+      return bestOpt
       where
         mid :: (Int, Int) -> (Int, Int) -> (Int, Int)
         mid (a1, h1) (a2, h2) = ((a1 + a2) `div` 2,  (h1 + h2) `div` 2)
 
+type FileInfo = (FilePath, [String], Int)
+type Opt  = (Int64, Int64)
 type OptN = (Int, Int)
 type ValidOpts = (([Int64], [Int64]), Maybe Int64)
 
@@ -374,7 +376,7 @@ main = do
     forM cores $ \core -> do
       printf "%dcores\n\n\n" core
       -- TODO: change 0,0 0,10 15,10 ..
-      findBestOpt exe args core optAHM 16
+      findBestOpt (exe, args, core) optAHM 16
     return ()
 
 -- stats-output separate for various outputs
@@ -503,8 +505,8 @@ plot3d datFile srcFile short what unit mty = script
 -- If the user passes +RTS flags they'll need to add -RTS so we don't
 -- clobber them. Perhaps filter for this.
 --
-runGHCProgram :: FilePath -> [String] -> GCHooks -> Int -> IO (Maybe GCStats)
-runGHCProgram exe opts gcflags core = do
+runGHCProgram :: FileInfo -> GCHooks -> IO (Maybe GCStats)
+runGHCProgram (exe, opts, core) gcflags = do
 
     -- printf "%s %s\n" exe (intercalate " " $ tuningargs ++ opts)
 
