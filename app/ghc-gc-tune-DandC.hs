@@ -320,15 +320,15 @@ findBestOpt fileInfo validOpts it = do
     let (optAs, optHs, maxmem) = validOpts
         maxAi  = length optAs - 1
         maxHi  = length optHs - 1
-        initOptNs = [(0, 0), (0, maxHi), (maxAi, 0), (maxAi, maxHi)]
+        initOptIs = [(0, 0), (0, maxHi), (maxAi, 0), (maxAi, maxHi)]
 
-    bestOpt <- loop fileInfo initOptNs validOpts it
+    bestOpt <- loop fileInfo initOptIs validOpts it
     return bestOpt
   where
-    loop :: FileInfo -> [OptN] -> ValidOpts -> Int -> IO Opt
-    loop fileInfo optNs validOpts it = do
+    loop :: FileInfo -> [OptI] -> ValidOpts -> Int -> IO Opt
+    loop fileInfo optIs validOpts it = do
       let (optAs, optHs, maxmem) = validOpts
-      res <- forM optNs $ \(a_i, h_i) -> do 
+      res <- forM optIs $ \(a_i, h_i) -> do 
         let hooks = GCHooks (optAs !! a_i) (optHs !! h_i) maxmem
         Just s <- runGHCProgram fileInfo hooks 
         -- exe : filename, args : runtime opts, hooks : -A, -H heap memory opts, coreN : coreopts
@@ -337,9 +337,9 @@ findBestOpt fileInfo validOpts it = do
         return (t, (a_i, h_i))
       printf "\n"
       let (time, (a_i, h_i)) = minimum res
-          nextOptNs = map (mid (a_i, h_i)) optNs
-      bestOpt <- case (nextOptNs /= optNs) of
-           True -> loop fileInfo nextOptNs validOpts (it - 1)
+          nextOptIs = map (mid (a_i, h_i)) optIs
+      bestOpt <- case (nextOptIs /= optIs) of
+           True -> loop fileInfo nextOptIs validOpts (it - 1)
            _    -> do 
                     forM [1..it-1] $ \ _ -> printf "\n"
                     printf "\nBest settings for Running time:\n"
@@ -353,7 +353,7 @@ findBestOpt fileInfo validOpts it = do
 
 type FileInfo = (FilePath, [String], Int)
 type Opt  = (Int64, Int64)
-type OptN = (Int, Int)
+type OptI = (Int, Int)
 type ValidOpts = ([Int64], [Int64], Maybe Int64)
 
 
